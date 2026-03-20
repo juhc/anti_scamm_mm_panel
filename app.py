@@ -12,7 +12,7 @@ from urllib import error, request as urlrequest
 import psycopg2
 from bson import ObjectId
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request, session
+from flask import Flask, jsonify, make_response, render_template, request
 from pymongo import MongoClient
 from werkzeug.exceptions import HTTPException
 
@@ -55,6 +55,7 @@ else:
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = env_bool("SESSION_COOKIE_SECURE", False)
+AUTH_COOKIE_NAME = "mm_auth"
 DEAL_STATUS_LABELS = {
     0: "Сделка создана покупателем",
     10: "Продавец подтвердил сделку",
@@ -140,11 +141,20 @@ def is_system_message_code(code: Any) -> bool:
 def require_auth(view_func):
     @wraps(view_func)
     def wrapped(*args, **kwargs):
-        if not session.get("authorized"):
+        cookie_value = request.cookies.get(AUTH_COOKIE_NAME, "")
+        if not hmac.compare_digest(cookie_value, auth_cookie_value()):
             return jsonify({"error": "Требуется авторизация"}), 401
         return view_func(*args, **kwargs)
 
     return wrapped
+
+
+def auth_cookie_value() -> str:
+    return hmac.new(
+        ACCESS_PASSWORD.encode("utf-8"),
+        b"anti-scam-mm-auth-cookie-v1",
+        hashlib.sha256,
+    ).hexdigest()
 
 
 @app.errorhandler(HTTPException)
@@ -194,7 +204,9 @@ def healthz():
 
 @app.route("/api/auth/status")
 def auth_status():
-    return jsonify({"authorized": bool(session.get("authorized"))})
+    cookie_value = request.cookies.get(AUTH_COOKIE_NAME, "")
+    authorized = hmac.compare_digest(cookie_value, auth_cookie_value())
+    return jsonify({"authorized": authorized})
 
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -203,8 +215,17 @@ def auth_login():
     password = str(payload.get("password") or "")
     if not hmac.compare_digest(password, ACCESS_PASSWORD):
         return jsonify({"ok": False, "error": "Неверный пароль"}), 401
-    session["authorized"] = True
-    return jsonify({"ok": True})
+    response = make_response(jsonify({"ok": True}))
+    response.set_cookie(
+        AUTH_COOKIE_NAME,
+        auth_cookie_value(),
+        httponly=True,
+        samesite="Lax",
+        secure=app.config.get("SESSION_COOKIE_SECURE", False),
+        max_age=60 * 60 * 24 * 7,
+        path="/",
+    )
+    return response
 
 
 @app.route("/api/stores")
