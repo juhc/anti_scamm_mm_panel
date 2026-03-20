@@ -1,26 +1,42 @@
 import os
 import json
+import hmac
+import secrets
 from datetime import datetime
 from decimal import Decimal
+from functools import wraps
 from typing import Any
 from urllib import error, request as urlrequest
 
 import psycopg2
 from bson import ObjectId
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, session
 from pymongo import MongoClient
 
 
 load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY", secrets.token_hex(32))
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
 
 PG_DSN = os.getenv("PG_DSN", "")
 MONGO_URI = os.getenv("MONGO_URI", "")
 MONGO_DB = os.getenv("MONGO_DB", "adopt-auth-test")
 MONGO_AUTH_URI = os.getenv("MONGO_AUTH_URI", "")
 MONGO_AUTH_DB = os.getenv("MONGO_AUTH_DB", "adopt-auth")
+ACCESS_PASSWORD = os.getenv("ACCESS_PASSWORD", "2#Xv9!QmL7@rN4$kTp1Zy8")
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = env_bool("SESSION_COOKIE_SECURE", False)
 DEAL_STATUS_LABELS = {
     0: "Сделка создана покупателем",
     10: "Продавец подтвердил сделку",
@@ -103,6 +119,16 @@ def is_system_message_code(code: Any) -> bool:
     return code in SYSTEM_MESSAGE_CODE_LABELS
 
 
+def require_auth(view_func):
+    @wraps(view_func)
+    def wrapped(*args, **kwargs):
+        if not session.get("authorized"):
+            return jsonify({"error": "Требуется авторизация"}), 401
+        return view_func(*args, **kwargs)
+
+    return wrapped
+
+
 def enrich_with_users(stores: list[dict[str, Any]]) -> list[dict[str, Any]]:
     # Temporary performance mode: skip Mongo ban checks and user enrichment.
     for store in stores:
@@ -119,7 +145,28 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/healthz")
+def healthz():
+    return jsonify({"ok": True})
+
+
+@app.route("/api/auth/status")
+def auth_status():
+    return jsonify({"authorized": bool(session.get("authorized"))})
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def auth_login():
+    payload = request.get_json(silent=True) or {}
+    password = str(payload.get("password") or "")
+    if not hmac.compare_digest(password, ACCESS_PASSWORD):
+        return jsonify({"ok": False, "error": "Неверный пароль"}), 401
+    session["authorized"] = True
+    return jsonify({"ok": True})
+
+
 @app.route("/api/stores")
+@require_auth
 def get_active_stores():
     search_query = (request.args.get("q") or "").strip()
     conn = open_pg()
@@ -200,6 +247,7 @@ def get_active_stores():
 
 
 @app.route("/api/stores/<store_id>/deals")
+@require_auth
 def get_store_deals(store_id: str):
     conn = open_pg()
     cur = conn.cursor()
@@ -302,6 +350,7 @@ def get_store_deals(store_id: str):
 
 
 @app.route("/api/stores/<store_id>/feedbacks")
+@require_auth
 def get_store_feedbacks(store_id: str):
     conn = open_pg()
     cur = conn.cursor()
@@ -384,6 +433,7 @@ def get_store_feedbacks(store_id: str):
 
 
 @app.route("/api/deals/<deal_id>/messages")
+@require_auth
 def get_deal_messages(deal_id: str):
     conn = open_pg()
     cur = conn.cursor()
@@ -432,6 +482,7 @@ def get_deal_messages(deal_id: str):
 
 
 @app.route("/api/users/ban", methods=["POST"])
+@require_auth
 def ban_user():
     payload = request.get_json(silent=True) or {}
     auth_token = (payload.get("token") or "").strip()

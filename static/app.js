@@ -1,4 +1,9 @@
 const storesTbody = document.getElementById("storesTbody");
+const authGate = document.getElementById("authGate");
+const appContent = document.getElementById("appContent");
+const sitePasswordInput = document.getElementById("sitePasswordInput");
+const siteLoginBtn = document.getElementById("siteLoginBtn");
+const siteLoginError = document.getElementById("siteLoginError");
 const dealsTbody = document.getElementById("dealsTbody");
 const loadingEl = document.getElementById("loading");
 const dealsLoadingEl = document.getElementById("dealsLoading");
@@ -39,6 +44,7 @@ let currentDeals = [];
 let banOverrides = {};
 let selectedStoreId = null;
 let selectedDealId = null;
+let isAuthorized = false;
 const DEAL_STATUS_FILTER_OPTIONS = [
   { value: "0", label: "0 - Сделка создана покупателем" },
   { value: "10", label: "10 - Продавец подтвердил сделку" },
@@ -127,6 +133,36 @@ function showCopyToast(text) {
   showCopyToast._timer = window.setTimeout(() => {
     toast.classList.remove("show");
   }, 1300);
+}
+
+function setAuthError(message) {
+  if (!message) {
+    siteLoginError.textContent = "";
+    siteLoginError.classList.add("d-none");
+    return;
+  }
+  siteLoginError.textContent = message;
+  siteLoginError.classList.remove("d-none");
+}
+
+function setAuthorizedState(authorized) {
+  isAuthorized = Boolean(authorized);
+  if (isAuthorized) {
+    authGate.classList.add("d-none");
+    appContent.classList.remove("d-none");
+  } else {
+    appContent.classList.add("d-none");
+    authGate.classList.remove("d-none");
+  }
+}
+
+async function apiFetch(url, options = {}) {
+  const response = await fetch(url, options);
+  if (response.status === 401) {
+    setAuthorizedState(false);
+    throw new Error("Требуется ввод пароля");
+  }
+  return response;
 }
 
 function setContext(el, text) {
@@ -342,6 +378,7 @@ function renderStores() {
 }
 
 async function loadStores() {
+  if (!isAuthorized) return;
   const searchValue = searchInput.value.trim();
   const endpoint = searchValue
     ? `/api/stores?q=${encodeURIComponent(searchValue)}`
@@ -349,7 +386,7 @@ async function loadStores() {
   loadingEl.textContent = "Загрузка данных...";
   storesTbody.innerHTML = "";
   try {
-    const response = await fetch(endpoint);
+    const response = await apiFetch(endpoint);
     if (!response.ok) throw new Error("Ошибка запроса stores");
     stores = await response.json();
     loadingEl.textContent = searchValue
@@ -363,6 +400,7 @@ async function loadStores() {
 }
 
 async function loadDeals(storeId) {
+  if (!isAuthorized) return;
   setSelectedStore(String(storeId));
   dealsTitle.textContent = `Сделки магазина ${short(storeId)}`;
   setContext(dealsContext, `Магазин: ${storeId}`);
@@ -372,7 +410,7 @@ async function loadDeals(storeId) {
   dealsCanvas.show();
 
   try {
-    const response = await fetch(`/api/stores/${storeId}/deals`);
+    const response = await apiFetch(`/api/stores/${storeId}/deals`);
     if (!response.ok) throw new Error("Ошибка запроса deals");
     currentDeals = await response.json();
     dealsLoadingEl.classList.add("d-none");
@@ -385,6 +423,7 @@ async function loadDeals(storeId) {
 }
 
 async function loadDealMessages(dealId) {
+  if (!isAuthorized) return;
   setSelectedDeal(String(dealId));
   dealDetailsTitle.textContent = `Сообщения сделки ${short(dealId)}`;
   setContext(dealDetailsContext, `Сделка: ${dealId}`);
@@ -394,7 +433,7 @@ async function loadDealMessages(dealId) {
   dealDetailsModal.show();
 
   try {
-    const response = await fetch(`/api/deals/${dealId}/messages`);
+    const response = await apiFetch(`/api/deals/${dealId}/messages`);
     if (!response.ok) throw new Error("Ошибка запроса сообщений сделки");
     const messages = await response.json();
     dealMessagesLoading.classList.add("d-none");
@@ -441,6 +480,7 @@ async function loadDealMessages(dealId) {
 }
 
 async function loadStoreFeedbacks(storeId) {
+  if (!isAuthorized) return;
   setSelectedStore(String(storeId));
   storeFeedbacksTitle.textContent = `Отзывы магазина ${short(storeId)}`;
   setContext(storeFeedbacksContext, `Магазин: ${storeId}`);
@@ -449,7 +489,7 @@ async function loadStoreFeedbacks(storeId) {
   storeFeedbacksModal.show();
 
   try {
-    const response = await fetch(`/api/stores/${storeId}/feedbacks`);
+    const response = await apiFetch(`/api/stores/${storeId}/feedbacks`);
     if (!response.ok) throw new Error("Ошибка запроса feedbacks");
     const feedbacks = await response.json();
     storeFeedbacksLoading.classList.add("d-none");
@@ -512,6 +552,7 @@ storesTbody.addEventListener("click", (event) => {
 });
 
 banSubmitBtn.addEventListener("click", async () => {
+  if (!isAuthorized) return;
   const userId = banUserIdInput.value.trim();
   const token = globalAuthTokenInput.value.trim();
   const reason = banReasonInput.value.trim();
@@ -544,7 +585,7 @@ banSubmitBtn.addEventListener("click", async () => {
   banUserResult.textContent = "Отправка запроса на блокировку...";
 
   try {
-    const response = await fetch("/api/users/ban", {
+    const response = await apiFetch("/api/users/ban", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token, userId, reason, scopes }),
@@ -596,6 +637,41 @@ globalAuthTokenInput.addEventListener("input", () => {
   localStorage.setItem("supportAuthToken", globalAuthTokenInput.value.trim());
 });
 
+sitePasswordInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    siteLoginBtn.click();
+  }
+});
+
+siteLoginBtn?.addEventListener("click", async () => {
+  const password = (sitePasswordInput.value || "").trim();
+  if (!password) {
+    setAuthError("Введите пароль");
+    return;
+  }
+  setAuthError("");
+  siteLoginBtn.disabled = true;
+  try {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "Ошибка авторизации");
+    }
+    setAuthorizedState(true);
+    sitePasswordInput.value = "";
+    await loadStores();
+  } catch (error) {
+    setAuthorizedState(false);
+    setAuthError(error.message || "Ошибка авторизации");
+  } finally {
+    siteLoginBtn.disabled = false;
+  }
+});
+
 searchInput.addEventListener("input", () => {
   window.clearTimeout(searchDebounceTimer);
   searchDebounceTimer = window.setTimeout(() => {
@@ -622,4 +698,18 @@ document.addEventListener("click", async (event) => {
   }
 });
 
-loadStores();
+async function bootstrapAuth() {
+  try {
+    const response = await fetch("/api/auth/status");
+    if (!response.ok) throw new Error("Не удалось проверить авторизацию");
+    const data = await response.json();
+    setAuthorizedState(Boolean(data.authorized));
+    if (data.authorized) {
+      await loadStores();
+    }
+  } catch {
+    setAuthorizedState(false);
+  }
+}
+
+bootstrapAuth();

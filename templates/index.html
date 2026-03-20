@@ -11,7 +11,31 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
   </head>
   <body>
-    <div class="container-xxl py-4 app-shell">
+    <div id="authGate" class="container py-5 auth-gate-shell">
+      <div class="card panel-card auth-gate-card">
+        <div class="card-body">
+          <h2 class="h5 mb-2">Доступ к панели</h2>
+          <p class="text-secondary mb-3">Введите пароль, чтобы открыть таблицу и API-данные.</p>
+          <div class="row g-2">
+            <div class="col-md-9">
+              <input
+                id="sitePasswordInput"
+                type="password"
+                class="form-control"
+                placeholder="Пароль доступа"
+                autocomplete="off"
+              />
+            </div>
+            <div class="col-md-3 d-grid">
+              <button id="siteLoginBtn" class="btn btn-primary">Войти</button>
+            </div>
+          </div>
+          <div id="siteLoginError" class="small text-danger mt-2 d-none"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="appContent" class="container-xxl py-4 app-shell d-none">
       <div class="hero mb-4">
         <div>
           <h1 class="hero-title mb-1">Активные продавцы</h1>

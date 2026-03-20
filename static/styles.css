@@ -15,6 +15,14 @@ body {
   line-height: 1.35;
 }
 
+.auth-gate-shell {
+  max-width: 760px;
+}
+
+.auth-gate-card {
+  border: 1px solid var(--border-soft);
+}
+
 .app-shell {
   max-width: 1500px;
 }
