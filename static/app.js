@@ -115,8 +115,9 @@ function activeDealsMarkup(value) {
 
 function copyMarkup(value, display = null) {
   if (value === null || value === undefined || value === "") return "-";
-  const shown = display ?? value;
-  return `<code class="copyable-token" data-copy="${esc(value)}" title="Нажмите, чтобы скопировать">${esc(shown)}</code>`;
+  const raw = String(value);
+  const shown = String(display ?? value);
+  return `<code class="copyable-token" data-copy="${esc(shown)}" data-copy-full="${esc(raw)}" title="Нажмите, чтобы скопировать полный ID">${esc(shown)}</code>`;
 }
 
 function showCopyToast(text) {
@@ -729,7 +730,7 @@ dealSortMode.addEventListener("change", renderDealsTable);
 document.addEventListener("click", async (event) => {
   const token = event.target.closest("[data-copy]");
   if (!token) return;
-  const value = token.dataset.copy;
+  const value = token.dataset.copyFull || token.dataset.copy;
   if (!value) return;
   const copied = await copyToClipboard(value);
   if (copied) {
