@@ -135,6 +135,37 @@ function showCopyToast(text) {
   }, 1300);
 }
 
+async function copyToClipboard(value) {
+  const text = String(value ?? "");
+  if (!text) return false;
+
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fallback below.
+  }
+
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    textarea.style.pointerEvents = "none";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return Boolean(ok);
+  } catch {
+    return false;
+  }
+}
+
 function setAuthError(message) {
   if (!message) {
     siteLoginError.textContent = "";
@@ -700,10 +731,10 @@ document.addEventListener("click", async (event) => {
   if (!token) return;
   const value = token.dataset.copy;
   if (!value) return;
-  try {
-    await navigator.clipboard.writeText(value);
+  const copied = await copyToClipboard(value);
+  if (copied) {
     showCopyToast(`Скопировано: ${value}`);
-  } catch (error) {
+  } else {
     showCopyToast("Не удалось скопировать");
   }
 });
