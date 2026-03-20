@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MM Sellers Monitor</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <div class="container-xxl py-4 app-shell">
+      <div class="hero mb-4">
+        <div>
+          <h1 class="hero-title mb-1">Активные продавцы</h1>
+          <p class="hero-subtitle mb-0">
+            Магазины со статусом продаж <span class="badge text-bg-success">2</span> и их сделки
+          </p>
+        </div>
+        <button id="refreshBtn" class="btn btn-primary">Обновить</button>
+      </div>
+
+      <div class="card panel-card mb-4">
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-7">
+              <label for="searchInput" class="form-label">Поиск по store / owner / username</label>
+              <input id="searchInput" type="text" class="form-control" placeholder="Начните ввод..." />
+            </div>
+            <div class="col-md-2">
+              <label for="banFilter" class="form-label">Фильтр по бану</label>
+              <select id="banFilter" class="form-select">
+                <option value="all">Все</option>
+                <option value="banned">Только забаненные</option>
+                <option value="not-banned">Только не забаненные</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label for="globalAuthToken" class="form-label">Authentication Token (Bearer)</label>
+              <input
+                id="globalAuthToken"
+                type="password"
+                class="form-control"
+                placeholder="JWT token"
+                autocomplete="off"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card panel-card">
+        <div class="card-body">
+          <div id="loading" class="text-secondary mb-3">Загрузка данных...</div>
+          <div class="table-responsive">
+            <table class="table align-middle table-hover mb-0">
+              <thead>
+                <tr>
+                  <th>Store ID</th>
+                  <th>Owner</th>
+                  <th>Пользователь</th>
+                  <th>Бан</th>
+                  <th>Сделок</th>
+                  <th>Активных</th>
+                  <th>Рейтинг</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="storesTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="offcanvas offcanvas-end" tabindex="-1" id="dealsCanvas">
+      <div class="offcanvas-header">
+        <h5 class="offcanvas-title" id="dealsTitle">Сделки магазина</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+      </div>
+      <div class="offcanvas-body">
+        <div id="dealsLoading" class="text-secondary mb-3 d-none">Загрузка сделок...</div>
+        <div id="dealsContext" class="small text-secondary mb-2 d-none"></div>
+        <div class="row g-2 mb-3">
+          <div class="col-md-6">
+            <label for="dealStatusFilter" class="form-label">Фильтр статуса</label>
+            <select id="dealStatusFilter" class="form-select form-select-sm">
+              <option value="all">Все статусы</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label for="dealSortMode" class="form-label">Сортировка</label>
+            <select id="dealSortMode" class="form-select form-select-sm">
+              <option value="created_desc">Сначала новые</option>
+              <option value="created_asc">Сначала старые</option>
+              <option value="status_asc">Статус (по возрастанию)</option>
+              <option value="status_desc">Статус (по убыванию)</option>
+            </select>
+          </div>
+        </div>
+        <div id="dealsTbody" class="deals-list"></div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="dealDetailsModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content details-modal">
+          <div class="modal-header">
+            <h5 class="modal-title" id="dealDetailsTitle">Сообщения сделки</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div id="dealDetailsContext" class="small text-secondary mb-2 d-none"></div>
+            <div id="dealMessagesLoading" class="text-secondary mb-3 d-none">Загрузка сообщений...</div>
+            <div id="dealMessagesEmpty" class="text-secondary d-none">Сообщений не найдено</div>
+            <div id="dealMessagesList" class="messages-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="banUserModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content details-modal">
+          <div class="modal-header">
+            <h5 class="modal-title">Блокировка пользователя</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label" for="banUserId">User ID</label>
+              <input id="banUserId" class="form-control" readonly />
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="banReason">Reason</label>
+              <input id="banReason" class="form-control" value="scam" />
+            </div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label" for="scopeSalesCv">sales_cv</label>
+                <input id="scopeSalesCv" type="datetime-local" class="form-control" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="scopeSalesManual">sales_manual</label>
+                <input id="scopeSalesManual" type="datetime-local" class="form-control" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="scopePurchasesCv">purchases_cv</label>
+                <input id="scopePurchasesCv" type="datetime-local" class="form-control" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="scopePurchasesManual">purchases_manual</label>
+                <input id="scopePurchasesManual" type="datetime-local" class="form-control" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="scopeWithdrawals">withdrawals</label>
+                <input id="scopeWithdrawals" type="datetime-local" class="form-control" />
+              </div>
+            </div>
+            <div id="banUserResult" class="mt-3 small text-secondary"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Отмена</button>
+            <button type="button" id="banSubmitBtn" class="btn btn-danger">Заблокировать</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="storeFeedbacksModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content details-modal">
+          <div class="modal-header">
+            <h5 class="modal-title" id="storeFeedbacksTitle">Отзывы магазина</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div id="storeFeedbacksContext" class="small text-secondary mb-2 d-none"></div>
+            <div id="storeFeedbacksLoading" class="text-secondary mb-3 d-none">Загрузка отзывов...</div>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle">
+                <thead>
+                  <tr>
+                    <th>Deal ID</th>
+                    <th>Статус сделки</th>
+                    <th>Предмет</th>
+                    <th>Игра</th>
+                    <th>Оплата покупателя</th>
+                    <th>Author</th>
+                    <th>Rating</th>
+                    <th>Comment</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+                <tbody id="storeFeedbacksTbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>
