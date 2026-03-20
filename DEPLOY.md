@@ -33,6 +33,26 @@ docker compose logs -f app
 
 Сервис будет доступен на `http://<server-ip>/`.
 
+## 2.1) Запуск через Tailscale (рекомендуется при VPN)
+
+Если сервер работает через Tailscale, лучше не открывать `80` наружу.
+Используйте локальный биндинг + проксирование через tailnet:
+
+```powershell
+docker compose -f docker-compose.tailscale.yml up -d --build
+tailscale serve --bg --https=443 http://127.0.0.1:8080
+```
+
+Проверить:
+
+```powershell
+tailscale status
+tailscale serve status
+curl -I http://127.0.0.1:8080/healthz
+```
+
+Открывать сайт нужно по `https://<hostname>.tailnet-*.ts.net` (из устройств в вашей tailnet).
+
 ## 3) Что уже защищено
 
 - Приложение за reverse proxy (Nginx), Flask напрямую наружу не торчит.

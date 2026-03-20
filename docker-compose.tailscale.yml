@@ -1,0 +1,37 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: anti-scam-app
+    restart: unless-stopped
+    environment:
+      PG_DSN: ${PG_DSN}
+      MONGO_URI: ${MONGO_URI}
+      MONGO_DB: ${MONGO_DB:-adopt-auth-test}
+      MONGO_AUTH_URI: ${MONGO_AUTH_URI:-}
+      MONGO_AUTH_DB: ${MONGO_AUTH_DB:-adopt-auth}
+      ACCESS_PASSWORD: ${ACCESS_PASSWORD}
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: anti-scam-nginx
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    # Bind only to localhost; external access goes via tailscale serve.
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
