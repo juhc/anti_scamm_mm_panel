@@ -138,12 +138,12 @@ function showCopyToast(text) {
 
 async function copyToClipboard(value) {
   const text = String(value ?? "");
-  if (!text) return false;
+  if (!text) return { ok: false, method: "none" };
 
   try {
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text);
-      return true;
+      return { ok: true, method: "clipboard-api" };
     }
   } catch {
     // Fallback below.
@@ -161,9 +161,9 @@ async function copyToClipboard(value) {
     textarea.select();
     const ok = document.execCommand("copy");
     document.body.removeChild(textarea);
-    return Boolean(ok);
+    return { ok: Boolean(ok), method: "execCommand" };
   } catch {
-    return false;
+    return { ok: false, method: "none" };
   }
 }
 
@@ -732,11 +732,17 @@ document.addEventListener("click", async (event) => {
   if (!token) return;
   const value = token.dataset.copyFull || token.dataset.copy;
   if (!value) return;
-  const copied = await copyToClipboard(value);
-  if (copied) {
+  const result = await copyToClipboard(value);
+  if (result.ok && result.method === "clipboard-api") {
     showCopyToast(`Скопировано: ${value}`);
+  } else if (result.ok && result.method === "execCommand") {
+    // Some production browser contexts report success for execCommand but do
+    // not actually populate clipboard. Provide an explicit manual fallback.
+    window.prompt("Скопируйте ID вручную (Ctrl+C, Enter):", value);
+    showCopyToast("Автокопирование ограничено браузером. Открыл ручное копирование.");
   } else {
-    showCopyToast("Не удалось скопировать");
+    window.prompt("Скопируйте ID вручную (Ctrl+C, Enter):", value);
+    showCopyToast("Открыл ручное копирование.");
   }
 });
 
