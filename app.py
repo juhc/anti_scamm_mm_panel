@@ -13,12 +13,12 @@ from bson import ObjectId
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request, session
 from pymongo import MongoClient
+from werkzeug.exceptions import HTTPException
 
 
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", secrets.token_hex(32))
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -28,12 +28,21 @@ def env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def env_str(name: str, default: str) -> str:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    value = value.strip()
+    return value if value else default
+
+
 PG_DSN = os.getenv("PG_DSN", "")
 MONGO_URI = os.getenv("MONGO_URI", "")
 MONGO_DB = os.getenv("MONGO_DB", "adopt-auth-test")
 MONGO_AUTH_URI = os.getenv("MONGO_AUTH_URI", "")
 MONGO_AUTH_DB = os.getenv("MONGO_AUTH_DB", "adopt-auth")
-ACCESS_PASSWORD = os.getenv("ACCESS_PASSWORD", "2#Xv9!QmL7@rN4$kTp1Zy8")
+app.secret_key = env_str("FLASK_SECRET_KEY", secrets.token_hex(32))
+ACCESS_PASSWORD = env_str("ACCESS_PASSWORD", "2#Xv9!QmL7@rN4$kTp1Zy8")
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = env_bool("SESSION_COOKIE_SECURE", False)
@@ -127,6 +136,30 @@ def require_auth(view_func):
         return view_func(*args, **kwargs)
 
     return wrapped
+
+
+@app.errorhandler(HTTPException)
+def handle_http_exception(exc: HTTPException):
+    if request.path.startswith("/api/"):
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": exc.description or "HTTP error",
+                    "status": exc.code or 500,
+                }
+            ),
+            exc.code or 500,
+        )
+    return exc
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_exception(exc: Exception):
+    if request.path.startswith("/api/"):
+        app.logger.exception("Unexpected API error", exc_info=exc)
+        return jsonify({"ok": False, "error": "Internal server error", "status": 500}), 500
+    raise exc
 
 
 def enrich_with_users(stores: list[dict[str, Any]]) -> list[dict[str, Any]]:

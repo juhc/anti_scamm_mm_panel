@@ -165,6 +165,16 @@ async function apiFetch(url, options = {}) {
   return response;
 }
 
+async function readJsonSafe(response) {
+  const contentType = (response.headers.get("content-type") || "").toLowerCase();
+  if (contentType.includes("application/json")) {
+    return await response.json();
+  }
+  const text = await response.text();
+  const snippet = text.replace(/\s+/g, " ").trim().slice(0, 180);
+  throw new Error(`Сервер вернул не JSON (HTTP ${response.status}): ${snippet || "пустой ответ"}`);
+}
+
 function setContext(el, text) {
   if (!el) return;
   if (!text) {
@@ -388,7 +398,7 @@ async function loadStores() {
   try {
     const response = await apiFetch(endpoint);
     if (!response.ok) throw new Error("Ошибка запроса stores");
-    stores = await response.json();
+    stores = await readJsonSafe(response);
     loadingEl.textContent = searchValue
       ? `Найдено магазинов по поиску: ${stores.length}`
       : `Найдено активных магазинов: ${stores.length}`;
@@ -412,7 +422,7 @@ async function loadDeals(storeId) {
   try {
     const response = await apiFetch(`/api/stores/${storeId}/deals`);
     if (!response.ok) throw new Error("Ошибка запроса deals");
-    currentDeals = await response.json();
+    currentDeals = await readJsonSafe(response);
     dealsLoadingEl.classList.add("d-none");
     refillDealStatusOptions(currentDeals);
     renderDealsTable();
@@ -435,7 +445,7 @@ async function loadDealMessages(dealId) {
   try {
     const response = await apiFetch(`/api/deals/${dealId}/messages`);
     if (!response.ok) throw new Error("Ошибка запроса сообщений сделки");
-    const messages = await response.json();
+    const messages = await readJsonSafe(response);
     dealMessagesLoading.classList.add("d-none");
 
     if (!messages.length) {
@@ -491,7 +501,7 @@ async function loadStoreFeedbacks(storeId) {
   try {
     const response = await apiFetch(`/api/stores/${storeId}/feedbacks`);
     if (!response.ok) throw new Error("Ошибка запроса feedbacks");
-    const feedbacks = await response.json();
+    const feedbacks = await readJsonSafe(response);
     storeFeedbacksLoading.classList.add("d-none");
 
     if (!feedbacks.length) {
@@ -590,7 +600,7 @@ banSubmitBtn.addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token, userId, reason, scopes }),
     });
-    const data = await response.json();
+    const data = await readJsonSafe(response);
     if (!response.ok || !data.ok) {
       throw new Error(data.error?.message || data.error?.error || JSON.stringify(data.error || data));
     }
@@ -657,7 +667,7 @@ siteLoginBtn?.addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password }),
     });
-    const data = await response.json();
+    const data = await readJsonSafe(response);
     if (!response.ok || !data.ok) {
       throw new Error(data.error || "Ошибка авторизации");
     }
@@ -702,7 +712,7 @@ async function bootstrapAuth() {
   try {
     const response = await fetch("/api/auth/status");
     if (!response.ok) throw new Error("Не удалось проверить авторизацию");
-    const data = await response.json();
+    const data = await readJsonSafe(response);
     setAuthorizedState(Boolean(data.authorized));
     if (data.authorized) {
       await loadStores();
