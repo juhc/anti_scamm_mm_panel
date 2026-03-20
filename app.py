@@ -2,6 +2,7 @@ import os
 import json
 import hmac
 import secrets
+import hashlib
 from datetime import datetime
 from decimal import Decimal
 from functools import wraps
@@ -41,8 +42,16 @@ MONGO_URI = os.getenv("MONGO_URI", "")
 MONGO_DB = os.getenv("MONGO_DB", "adopt-auth-test")
 MONGO_AUTH_URI = os.getenv("MONGO_AUTH_URI", "")
 MONGO_AUTH_DB = os.getenv("MONGO_AUTH_DB", "adopt-auth")
-app.secret_key = env_str("FLASK_SECRET_KEY", secrets.token_hex(32))
 ACCESS_PASSWORD = env_str("ACCESS_PASSWORD", "2#Xv9!QmL7@rN4$kTp1Zy8")
+configured_secret = env_str("FLASK_SECRET_KEY", "")
+if configured_secret:
+    app.secret_key = configured_secret
+else:
+    # Deterministic fallback for multi-worker setups (e.g. gunicorn) when
+    # FLASK_SECRET_KEY is missing: all workers must share one secret.
+    app.secret_key = hashlib.sha256(
+        f"{ACCESS_PASSWORD}|anti-scam-mm-panel".encode("utf-8")
+    ).hexdigest()
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = env_bool("SESSION_COOKIE_SECURE", False)
