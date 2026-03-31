@@ -10,6 +10,7 @@ const dealsLoadingEl = document.getElementById("dealsLoading");
 const searchInput = document.getElementById("searchInput");
 const banFilter = document.getElementById("banFilter");
 const refreshBtn = document.getElementById("refreshBtn");
+const openBulkBanBtn = document.getElementById("openBulkBanBtn");
 const dealsTitle = document.getElementById("dealsTitle");
 const dealsCanvas = new bootstrap.Offcanvas("#dealsCanvas");
 const dealsContext = document.getElementById("dealsContext");
@@ -22,6 +23,7 @@ const dealMessagesEmpty = document.getElementById("dealMessagesEmpty");
 const dealMessagesList = document.getElementById("dealMessagesList");
 const dealDetailsModal = new bootstrap.Modal("#dealDetailsModal");
 const banUserModal = new bootstrap.Modal("#banUserModal");
+const bulkBanModal = new bootstrap.Modal("#bulkBanModal");
 const storeFeedbacksModal = new bootstrap.Modal("#storeFeedbacksModal");
 const storeFeedbacksTitle = document.getElementById("storeFeedbacksTitle");
 const storeFeedbacksContext = document.getElementById("storeFeedbacksContext");
@@ -31,12 +33,21 @@ const banUserIdInput = document.getElementById("banUserId");
 const globalAuthTokenInput = document.getElementById("globalAuthToken");
 const banReasonInput = document.getElementById("banReason");
 const banSubmitBtn = document.getElementById("banSubmitBtn");
+const bulkBanSubmitBtn = document.getElementById("bulkBanSubmitBtn");
 const banUserResult = document.getElementById("banUserResult");
+const bulkBanResult = document.getElementById("bulkBanResult");
+const bulkUserIdsInput = document.getElementById("bulkUserIds");
+const bulkReasonInput = document.getElementById("bulkReason");
 const scopeSalesCvInput = document.getElementById("scopeSalesCv");
 const scopeSalesManualInput = document.getElementById("scopeSalesManual");
 const scopePurchasesCvInput = document.getElementById("scopePurchasesCv");
 const scopePurchasesManualInput = document.getElementById("scopePurchasesManual");
 const scopeWithdrawalsInput = document.getElementById("scopeWithdrawals");
+const bulkScopeSalesCvInput = document.getElementById("bulkScopeSalesCv");
+const bulkScopeSalesManualInput = document.getElementById("bulkScopeSalesManual");
+const bulkScopePurchasesCvInput = document.getElementById("bulkScopePurchasesCv");
+const bulkScopePurchasesManualInput = document.getElementById("bulkScopePurchasesManual");
+const bulkScopeWithdrawalsInput = document.getElementById("bulkScopeWithdrawals");
 let searchDebounceTimer = null;
 
 let stores = [];
@@ -241,6 +252,18 @@ function toIsoOrNull(value) {
 
 function defaultScopeDateLocal() {
   return "2100-01-01T00:00";
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseBulkUserIds(text) {
+  const ids = String(text || "")
+    .split(/\r?\n/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  return [...new Set(ids)];
 }
 
 function formatDealStatusOption(deal) {
@@ -665,6 +688,107 @@ banSubmitBtn.addEventListener("click", async () => {
   }
 });
 
+bulkBanSubmitBtn.addEventListener("click", async () => {
+  if (!isAuthorized) return;
+  const token = globalAuthTokenInput.value.trim();
+  const reason = (bulkReasonInput?.value || "").trim();
+  const userIds = parseBulkUserIds(bulkUserIdsInput.value);
+  const scopes = {
+    sales_cv: toIsoOrNull(bulkScopeSalesCvInput.value),
+    sales_manual: toIsoOrNull(bulkScopeSalesManualInput.value),
+    purchases_cv: toIsoOrNull(bulkScopePurchasesCvInput.value),
+    purchases_manual: toIsoOrNull(bulkScopePurchasesManualInput.value),
+    withdrawals: toIsoOrNull(bulkScopeWithdrawalsInput.value),
+  };
+  for (const key of Object.keys(scopes)) {
+    if (!scopes[key]) delete scopes[key];
+  }
+
+  if (!token) {
+    bulkBanResult.className = "mt-2 small text-danger";
+    bulkBanResult.textContent = "Нужно заполнить Authentication Token на главной странице";
+    return;
+  }
+  if (!userIds.length) {
+    bulkBanResult.className = "mt-2 small text-danger";
+    bulkBanResult.textContent = "Вставьте хотя бы один user_id в список";
+    return;
+  }
+  if (!Object.keys(scopes).length) {
+    bulkBanResult.className = "mt-2 small text-danger";
+    bulkBanResult.textContent = "Нужно заполнить хотя бы один scope";
+    return;
+  }
+
+  bulkBanSubmitBtn.disabled = true;
+  let successCount = 0;
+  let failCount = 0;
+  const total = userIds.length;
+  const failedIds = [];
+
+  for (let i = 0; i < userIds.length; i += 1) {
+    const userId = userIds[i];
+    bulkBanResult.className = "mt-2 small text-secondary";
+    bulkBanResult.textContent =
+      `Обработка ${i + 1}/${total}: ${userId}. Успешно: ${successCount}, ошибок: ${failCount}`;
+
+    try {
+      const response = await apiFetch("/api/users/ban", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, userId, reason, scopes }),
+      });
+      const data = await readJsonSafe(response);
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error?.message || data.error?.error || JSON.stringify(data.error || data));
+      }
+      successCount += 1;
+      const firstScope = Object.keys(scopes)[0] || "manual";
+      stores = stores.map((store) =>
+        String(store.owner_id || "") === userId
+          ? {
+              ...store,
+              is_banned_mongo: true,
+              mongo_ban_scope: firstScope,
+              is_banned: true,
+              owner_user: {
+                ...(store.owner_user || {}),
+                ban_scope: firstScope,
+              },
+            }
+          : store
+      );
+      renderStores();
+    } catch (error) {
+      failCount += 1;
+      failedIds.push(`${userId}: ${error.message}`);
+    }
+
+    if (i < userIds.length - 1) {
+      bulkBanResult.className = "mt-2 small text-secondary";
+      bulkBanResult.textContent =
+        `Обработка ${i + 1}/${total} завершена. Пауза 5 секунд перед следующим запросом... ` +
+        `Успешно: ${successCount}, ошибок: ${failCount}`;
+      await sleep(5000);
+    }
+  }
+
+  if (failCount > 0) {
+    bulkBanResult.className = "mt-2 small text-warning";
+    bulkBanResult.textContent =
+      `Готово. Успешно: ${successCount}/${total}, ошибок: ${failCount}. ` +
+      `Первые ошибки: ${failedIds.slice(0, 3).join(" | ")}`;
+  } else {
+    bulkBanResult.className = "mt-2 small text-success";
+    bulkBanResult.textContent = `Готово. Успешно заблокировано: ${successCount}/${total}`;
+  }
+
+  bulkBanSubmitBtn.disabled = false;
+  setTimeout(() => {
+    loadStores();
+  }, 600);
+});
+
 const savedToken = localStorage.getItem("supportAuthToken") || "";
 if (savedToken) {
   globalAuthTokenInput.value = savedToken;
@@ -677,6 +801,19 @@ try {
 
 globalAuthTokenInput.addEventListener("input", () => {
   localStorage.setItem("supportAuthToken", globalAuthTokenInput.value.trim());
+});
+
+openBulkBanBtn?.addEventListener("click", () => {
+  bulkReasonInput.value = "scam";
+  bulkUserIdsInput.value = "";
+  bulkScopeSalesCvInput.value = defaultScopeDateLocal();
+  bulkScopeSalesManualInput.value = defaultScopeDateLocal();
+  bulkScopePurchasesCvInput.value = defaultScopeDateLocal();
+  bulkScopePurchasesManualInput.value = defaultScopeDateLocal();
+  bulkScopeWithdrawalsInput.value = defaultScopeDateLocal();
+  bulkBanResult.textContent = "";
+  bulkBanResult.className = "mt-3 small text-secondary";
+  bulkBanModal.show();
 });
 
 sitePasswordInput?.addEventListener("keydown", (event) => {

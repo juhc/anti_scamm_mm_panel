@@ -43,7 +43,10 @@
             Магазины со статусом продаж <span class="badge text-bg-success">2</span> и их сделки
           </p>
         </div>
-        <button id="refreshBtn" class="btn btn-primary">Обновить</button>
+        <div class="d-flex gap-2">
+          <button id="openBulkBanBtn" class="btn btn-outline-danger">Массовый бан</button>
+          <button id="refreshBtn" class="btn btn-primary">Обновить</button>
+        </div>
       </div>
 
       <div class="card panel-card mb-4">
@@ -188,6 +191,60 @@
           <div class="modal-footer">
             <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Отмена</button>
             <button type="button" id="banSubmitBtn" class="btn btn-danger">Заблокировать</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="bulkBanModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content details-modal">
+          <div class="modal-header">
+            <h5 class="modal-title">Массовая блокировка пользователей</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label" for="bulkReason">Reason</label>
+              <input id="bulkReason" class="form-control" value="scam" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="bulkUserIds">Список user_id (каждый с новой строки)</label>
+              <textarea
+                id="bulkUserIds"
+                class="form-control"
+                rows="9"
+                placeholder="63484654993ed2f8a0006fea&#10;69aa1d3264ce2c8d70bc4bc2&#10;..."
+              ></textarea>
+              <div class="form-text">Запросы идут последовательно: 1 бан каждые 5 секунд.</div>
+            </div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label" for="bulkScopeSalesCv">sales_cv</label>
+                <input id="bulkScopeSalesCv" type="datetime-local" class="form-control" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="bulkScopeSalesManual">sales_manual</label>
+                <input id="bulkScopeSalesManual" type="datetime-local" class="form-control" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="bulkScopePurchasesCv">purchases_cv</label>
+                <input id="bulkScopePurchasesCv" type="datetime-local" class="form-control" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="bulkScopePurchasesManual">purchases_manual</label>
+                <input id="bulkScopePurchasesManual" type="datetime-local" class="form-control" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="bulkScopeWithdrawals">withdrawals</label>
+                <input id="bulkScopeWithdrawals" type="datetime-local" class="form-control" />
+              </div>
+            </div>
+            <div id="bulkBanResult" class="mt-3 small text-secondary"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Отмена</button>
+            <button type="button" id="bulkBanSubmitBtn" class="btn btn-danger">Запустить массовый бан</button>
           </div>
         </div>
       </div>
