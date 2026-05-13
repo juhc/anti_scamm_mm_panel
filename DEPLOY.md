@@ -4,9 +4,8 @@
 
 1. Установите Docker и Docker Compose plugin.
 2. Скопируйте `.env.example` в `.env` и заполните значения:
-   - `PG_DSN`
-   - `MONGO_URI`, `MONGO_DB`
-   - `MONGO_AUTH_URI`, `MONGO_AUTH_DB` (если нужно)
+   - `PG_DSN` (основная БД маркетплейса: `stores`, `deals`, `goods`, ...)
+   - `AUTH_PG_DSN` (auth-БД с таблицами `users` и `bans`)
    - `ACCESS_PASSWORD` (пароль входа на сайт)
    - `FLASK_SECRET_KEY` (случайный длинный ключ)
    - `SESSION_COOKIE_SECURE=true` (оставить `true` для HTTPS)

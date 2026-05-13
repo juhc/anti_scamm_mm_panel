@@ -7,10 +7,7 @@ services:
     restart: unless-stopped
     environment:
       PG_DSN: ${PG_DSN:?PG_DSN is required}
-      MONGO_URI: ${MONGO_URI:-}
-      MONGO_DB: ${MONGO_DB:-adopt-auth-test}
-      MONGO_AUTH_URI: ${MONGO_AUTH_URI:-}
-      MONGO_AUTH_DB: ${MONGO_AUTH_DB:-adopt-auth}
+      AUTH_PG_DSN: ${AUTH_PG_DSN:?AUTH_PG_DSN is required}
       ACCESS_PASSWORD: ${ACCESS_PASSWORD:?ACCESS_PASSWORD is required}
       FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:-}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}

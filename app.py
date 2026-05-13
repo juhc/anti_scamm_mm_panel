@@ -1,7 +1,6 @@
 import os
 import json
 import hmac
-import secrets
 import hashlib
 from datetime import datetime
 from decimal import Decimal
@@ -10,10 +9,8 @@ from typing import Any
 from urllib import error, request as urlrequest
 
 import psycopg2
-from bson import ObjectId
 from dotenv import load_dotenv
 from flask import Flask, jsonify, make_response, render_template, request
-from pymongo import MongoClient
 from werkzeug.exceptions import HTTPException
 
 
@@ -38,10 +35,7 @@ def env_str(name: str, default: str) -> str:
 
 
 PG_DSN = os.getenv("PG_DSN", "")
-MONGO_URI = os.getenv("MONGO_URI", "")
-MONGO_DB = os.getenv("MONGO_DB", "adopt-auth-test")
-MONGO_AUTH_URI = os.getenv("MONGO_AUTH_URI", "")
-MONGO_AUTH_DB = os.getenv("MONGO_AUTH_DB", "adopt-auth")
+AUTH_PG_DSN = os.getenv("AUTH_PG_DSN", "")
 ACCESS_PASSWORD = env_str("ACCESS_PASSWORD", "2#Xv9!QmL7@rN4$kTp1Zy8")
 configured_secret = env_str("FLASK_SECRET_KEY", "")
 if configured_secret:
@@ -97,19 +91,10 @@ def open_pg():
     return psycopg2.connect(PG_DSN)
 
 
-def open_mongo():
-    if not MONGO_URI:
-        raise RuntimeError("MONGO_URI is not configured")
-    client = MongoClient(MONGO_URI)
-    return client, client[MONGO_DB]
-
-
-def open_mongo_auth():
-    auth_uri = MONGO_AUTH_URI or MONGO_URI
-    if not auth_uri:
-        raise RuntimeError("MONGO_AUTH_URI or MONGO_URI is not configured")
-    client = MongoClient(auth_uri)
-    return client, client[MONGO_AUTH_DB]
+def open_auth_pg():
+    if not AUTH_PG_DSN:
+        raise RuntimeError("AUTH_PG_DSN is not configured")
+    return psycopg2.connect(AUTH_PG_DSN)
 
 
 def serialize_row(columns: list[str], row: tuple[Any, ...]) -> dict[str, Any]:
@@ -182,12 +167,88 @@ def handle_unexpected_exception(exc: Exception):
 
 
 def enrich_with_users(stores: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    # Temporary performance mode: skip Mongo ban checks and user enrichment.
     for store in stores:
         store["owner_user"] = None
-        store["mongo_ban_scope"] = None
-        store["is_banned_mongo"] = False
         store["is_banned"] = False
+        store["ban_scopes"] = []
+        store["bans"] = []
+
+    owner_ids = sorted({
+        str(store["owner_id"]) for store in stores if store.get("owner_id")
+    })
+    if not owner_ids or not AUTH_PG_DSN:
+        return stores
+
+    try:
+        conn = open_auth_pg()
+    except Exception as exc:
+        app.logger.warning("auth-db connect failed: %s", exc)
+        return stores
+
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, email, username, public_username, avatar_url
+                    FROM users
+                    WHERE id = ANY(%s)
+                    """,
+                    (owner_ids,),
+                )
+                users_by_id = {
+                    row[0]: {
+                        "id": row[0],
+                        "email": row[1],
+                        "username": row[2],
+                        "public_username": row[3],
+                        "avatar_url": row[4],
+                    }
+                    for row in cur.fetchall()
+                }
+
+                cur.execute(
+                    """
+                    SELECT user_id, scope, reason, status, until, created_at
+                    FROM bans
+                    WHERE user_id = ANY(%s)
+                      AND status = 'active'
+                    ORDER BY created_at DESC
+                    """,
+                    (owner_ids,),
+                )
+                bans_by_user: dict[str, list[dict[str, Any]]] = {}
+                for user_id, scope, reason, status, until, created_at in cur.fetchall():
+                    bans_by_user.setdefault(user_id, []).append(
+                        {
+                            "scope": scope,
+                            "reason": reason,
+                            "status": status,
+                            "until": json_safe(until),
+                            "created_at": json_safe(created_at),
+                        }
+                    )
+    finally:
+        conn.close()
+
+    for store in stores:
+        owner_id = store.get("owner_id")
+        if not owner_id:
+            continue
+        owner_id = str(owner_id)
+        store["owner_user"] = users_by_id.get(owner_id)
+        active_bans = bans_by_user.get(owner_id, [])
+        if active_bans:
+            store["bans"] = active_bans
+            store["is_banned"] = True
+            seen: set[str] = set()
+            ordered_scopes: list[str] = []
+            for ban in active_bans:
+                scope = ban.get("scope")
+                if scope and scope not in seen:
+                    seen.add(scope)
+                    ordered_scopes.append(scope)
+            store["ban_scopes"] = ordered_scopes
 
     return stores
 

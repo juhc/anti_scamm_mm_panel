@@ -367,22 +367,22 @@ function userLabel(store) {
 }
 
 function getBanInfo(store) {
-  if (store.is_banned_mongo) {
+  if (store.is_banned) {
+    const scopes = Array.isArray(store.ban_scopes) ? store.ban_scopes : [];
     return {
       isBanned: true,
-      scope: store.mongo_ban_scope ?? store.owner_user?.ban_scope ?? "ban_scope",
-      source: "mongo",
+      scopes,
     };
   }
-  return { isBanned: false, scope: null, source: "mongo" };
+  return { isBanned: false, scopes: [] };
 }
 
 function matchesFilters(store) {
   const q = searchInput.value.trim().toLowerCase();
   const mode = banFilter.value;
 
-  if (mode === "banned" && !store.is_banned_mongo) return false;
-  if (mode === "not-banned" && store.is_banned_mongo) return false;
+  if (mode === "banned" && !store.is_banned) return false;
+  if (mode === "not-banned" && store.is_banned) return false;
 
   if (!q) return true;
   const haystack = [
@@ -415,7 +415,9 @@ function renderStores() {
       <td>
         ${
           banInfo.isBanned
-            ? `<span class="badge badge-ban">mongo ban_scope: ${esc(banInfo.scope)}</span>`
+            ? `<span class="badge badge-ban" title="Активные scope-ы">ban: ${esc(
+                banInfo.scopes.length ? banInfo.scopes.join(", ") : "active"
+              )}</span>`
             : '<span class="badge badge-ok">нет</span>'
         }
       </td>
@@ -659,18 +661,15 @@ banSubmitBtn.addEventListener("click", async () => {
     if (!response.ok || !data.ok) {
       throw new Error(data.error?.message || data.error?.error || JSON.stringify(data.error || data));
     }
-    const firstScope = Object.keys(scopes)[0] || "manual";
+    const appliedScopes = Object.keys(scopes);
     stores = stores.map((store) =>
       String(store.owner_id || "") === userId
         ? {
             ...store,
-            is_banned_mongo: true,
-            mongo_ban_scope: firstScope,
             is_banned: true,
-            owner_user: {
-              ...(store.owner_user || {}),
-              ban_scope: firstScope,
-            },
+            ban_scopes: Array.from(
+              new Set([...(store.ban_scopes || []), ...appliedScopes])
+            ),
           }
         : store
     );
@@ -743,18 +742,15 @@ bulkBanSubmitBtn.addEventListener("click", async () => {
         throw new Error(data.error?.message || data.error?.error || JSON.stringify(data.error || data));
       }
       successCount += 1;
-      const firstScope = Object.keys(scopes)[0] || "manual";
+      const appliedScopes = Object.keys(scopes);
       stores = stores.map((store) =>
         String(store.owner_id || "") === userId
           ? {
               ...store,
-              is_banned_mongo: true,
-              mongo_ban_scope: firstScope,
               is_banned: true,
-              owner_user: {
-                ...(store.owner_user || {}),
-                ban_scope: firstScope,
-              },
+              ban_scopes: Array.from(
+                new Set([...(store.ban_scopes || []), ...appliedScopes])
+              ),
             }
           : store
       );
